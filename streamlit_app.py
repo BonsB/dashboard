@@ -1,4 +1,3 @@
-
 import streamlit as st
 import pandas as pd
 import plotly.express as px
@@ -8,7 +7,11 @@ st.set_page_config(page_title="รายงานวิเคราะห์ส�
 
 @st.cache_data
 def load_and_clean_data():
-    df = pd.read_csv('data/mental-heath-in-tech-2016_20161114.csv')
+    # โหลดข้อมูล (ตรวจสอบให้แน่ใจว่าไฟล์อยู่ในโฟลเดอร์ data/)
+    try:
+        df = pd.read_csv('data/mental-heath-in-tech-2016_20161114.csv')
+    except:
+        return pd.DataFrame() # ส่งคืน DF ว่างหากหาไฟล์ไม่เจอ
     
     column_mapping = {
         "If you have a mental health issue, do you feel that it interferes with your work when NOT being treated effectively?": "work_interfere_not_treated",
@@ -42,9 +45,40 @@ def load_and_clean_data():
     
     return df
 
-df = load_and_clean_data()
+df_raw = load_and_clean_data()
 
+# --- SIDEBAR: ส่วนควบคุมการ INTERACTIVE ---
+st.sidebar.header("🔍 ตัวกรองข้อมูล (Interactive)")
+
+# 1. เลือกเพศ
+selected_gender = st.sidebar.multiselect(
+    "เลือกเพศ:", 
+    options=df_raw['gender'].unique(), 
+    default=df_raw['gender'].unique()
+)
+
+# 2. เลือกช่วงอายุ
+min_age = int(df_raw['age'].min())
+max_age = int(df_raw['age'].max())
+selected_age = st.sidebar.slider("เลือกช่วงอายุ:", min_age, max_age, (min_age, max_age))
+
+# 3. เลือกพนักงานสาย Tech
+tech_status = st.sidebar.radio("พนักงานสายเทคโนโลยี (tech_role):", ["ทั้งหมด", "ใช่ (1)", "ไม่ใช่ (0)"])
+
+# --- การประมวลผลตัวกรอง ---
+df = df_raw[
+    (df_raw['gender'].isin(selected_gender)) & 
+    (df_raw['age'].between(selected_age[0], selected_age[1]))
+]
+
+if tech_status == "ใช่ (1)":
+    df = df[df['tech_role'] == 1.0]
+elif tech_status == "ไม่ใช่ (0)":
+    df = df[df['tech_role'] == 0.0]
+
+# --- แสดงผลหน้าหลัก ---
 st.title("📑 รายงานวิเคราะห์ความสัมพันธ์ระหว่างสภาพแวดล้อมการทำงานและสุขภาพจิตพนักงาน")
+st.write(f"แสดงข้อมูลที่กรองแล้ว: **{len(df)}** รายการ")
 st.markdown("---")
 
 # --- ส่วนที่ 1: ผลกระทบต่อประสิทธิภาพการทำงาน ---
@@ -53,16 +87,16 @@ col1, col2 = st.columns(2)
 with col1:
     st.subheader("สัดส่วนระดับผลกระทบต่อการทำงาน เมื่อปัญหาสุขภาพจิตไม่ได้รับการรักษาอย่างเหมาะสม")
     fig1 = px.pie(df, names='work_interfere_not_treated', hole=0.4, 
-                 color_discrete_sequence=px.colors.sequential.RdBu)
-    st.plotly_chart(fig1, width='stretch')
+                  color_discrete_sequence=px.colors.sequential.RdBu)
+    st.plotly_chart(fig1, use_container_width=True)
 
 with col2:
     st.subheader("ความรู้สึกสะดวกใจในการลาป่วยด้วยเหตุผลด้านสุขภาพจิต จำแนกตามเพศของพนักงาน")
     leave_order = ["Very easy", "Somewhat easy", "Neither easy nor difficult", "Somewhat difficult", "Very difficult", "I don't know"]
     fig2 = px.histogram(df, x="medical_leave_ease", color="gender", 
-                       category_orders={"medical_leave_ease": leave_order}, barmode="group",
-                       labels={"medical_leave_ease": "ระดับความสะดวกในการลา", "gender": "กลุ่มตัวอย่าง"})
-    st.plotly_chart(fig2, width='stretch')
+                        category_orders={"medical_leave_ease": leave_order}, barmode="group",
+                        labels={"medical_leave_ease": "ระดับความสะดวกในการลา", "gender": "กลุ่มตัวอย่าง"})
+    st.plotly_chart(fig2, use_container_width=True)
 
 # --- ส่วนที่ 2: บทบาทขององค์กรและสวัสดิการ ---
 st.divider()
@@ -73,31 +107,32 @@ with col3:
     st.subheader("การจัดสรรสวัสดิการด้านสุขภาพจิตจำแนกตามขนาดขององค์กร")
     size_order = ["1-5", "6-25", "26-100", "100-500", "500-1000", "More than 1000"]
     fig3 = px.histogram(df, x="company_size", color="mental_health_benefits", 
-                       category_orders={"company_size": size_order},
-                       labels={"company_size": "จำนวนพนักงานในองค์กร", "mental_health_benefits": "การจัดสรรสวัสดิการ"})
-    st.plotly_chart(fig3, width='stretch')
+                        category_orders={"company_size": size_order},
+                        labels={"company_size": "จำนวนพนักงานในองค์กร", "mental_health_benefits": "การจัดสรรสวัสดิการ"})
+    st.plotly_chart(fig3, use_container_width=True)
 
 with col4:
     st.subheader("ความสัมพันธ์ระหว่างรูปแบบการทำงาน (Remote/Onsite) กับการคุ้มครองความเป็นส่วนตัวของพนักงาน")
     sunburst_df = df[['remote_work', 'anonymity_protected']].dropna()
     fig4 = px.sunburst(sunburst_df, path=['remote_work', 'anonymity_protected'], 
-                      color='remote_work', labels={'labels':'ข้อมูล', 'parent':'กลุ่ม'})
-    st.plotly_chart(fig4, width='stretch')
+                       color='remote_work', labels={'labels':'ข้อมูล', 'parent':'กลุ่ม'})
+    st.plotly_chart(fig4, use_container_width=True)
 
-# --- ส่วนที่ 3: วัฒนธรรมองค์กรและการรับรู้ข้อมูุล ---
+# --- ส่วนที่ 3: วัฒนธรรมองค์กรและการรับรู้ข้อมูล ---
 st.divider()
 
 col5, col6 = st.columns(2)
 
 with col5:
     st.subheader("ความสอดคล้องระหว่างการสื่อสารภายในองค์กรกับการจัดสรรทรัพยากรด้านสุขภาพจิต")
+    # Heatmap มักจะใช้ข้อมูลสรุป crosstab
     heatmap_data = pd.crosstab(df['employer_discussion'], df['employer_resources'])
     fig5 = px.imshow(heatmap_data, text_auto=True, color_continuous_scale='YlGnBu',
                     labels=dict(x="การจัดสรรทรัพยากร/แหล่งข้อมูล", y="ความถี่การสื่อสารขององค์กร"))
-    st.plotly_chart(fig5, width='stretch')
+    st.plotly_chart(fig5, use_container_width=True)
 
 with col6:
     st.subheader("ระดับการรับรู้สิทธิการรักษาสุขภาพจิตของพนักงานสายเทคโนโลยี")
     fig6 = px.histogram(df, x="tech_role", color="care_options_awareness", barmode="group",
                        labels={"tech_role": "บทบาทหน้าที่ (1=สายเทคโนโลยี, 0=สายอื่น)", "care_options_awareness": "ระดับการรับรู้สิทธิ"})
-    st.plotly_chart(fig6, width='stretch')
+    st.plotly_chart(fig6, use_container_width=True)
